@@ -37,8 +37,10 @@ AEP_Patches    = tilde-in-pathnames.patch emergency-buffer-reduction.patch \
 		 keymgr.patch testing-installed.patch align-natural-abi.patch \
 		 export-control.patch cross-configury.patch eprintf.patch \
 		 testsuite-4.0.1.patch \
-		 libtool-jaguar.patch jaguar-semun.patch jaguar-abilimits.patch \
-		 stdexcept_vis.patch
+		 libtool-jaguar.patch jaguar-semun.patch \
+		 jaguar-abilimits.patch \
+		 stdexcept_vis.patch testuite-06-03-10.patch fstream.patch \
+		 x86_vis.patch vector_bool.patch pr21244.patch
 
 ifeq ($(suffix $(AEP_Filename)),.bz2)
 AEP_ExtractOption = j
@@ -47,6 +49,8 @@ AEP_ExtractOption = z
 endif
 
 Install_Target = install
+
+CUR_OS_VERS	:= $(shell uname -r | cut -f 1 -d .)
 
 ifeq ($(RC_ProjectName),libstdcxx_Jaguar)
 DARWIN_VERS	= 6
@@ -70,7 +74,18 @@ SDKPFXs		= /Developer/SDKs/MacOSX10.3.9.sdk \
 		  /Developer/SDKs/MacOSX10.3.internal.sdk
 SDKEXCLUDE	= \! -name \*.dylib
 else
+ifeq ($(RC_ProjectName),libstdcxx_Inca)
 DARWIN_VERS	= 8
+MACOSX_DEPLOYMENT_TARGET=10.4
+SYSROOT		= -isysroot /Developer/SDKs/MacOSX10.4u.sdk
+CC		:= /usr/bin/gcc $(SYSROOT)
+CXX		:= /usr/bin/g++ $(SYSROOT)
+SDKPFXs		= /Developer/SDKs/MacOSX10.4u.sdk \
+		  /Developer/SDKs/MacOSX10.4.0.Internal.sdk
+SDKEXCLUDE	= \! -name \*.dylib
+else
+DARWIN_VERS	= $(CUR_OS_VERS)
+endif
 endif
 endif
 
@@ -96,19 +111,21 @@ endif
 
 # Rearrange the final destroot to be just the way we want it.
 post-install:
-	if [ -d $(DSTROOT)/usr/lib/ppc64 ] ; then \
-	  install_name_tool -id /usr/lib/libstdc++.6.dylib \
-	    $(DSTROOT)/usr/lib/ppc64/libstdc++.6.*.dylib && \
-	  for f in `cd $(DSTROOT)/usr/lib/ppc64 && echo *.{dylib,a}` ; do \
-	    if [ ! -L $(DSTROOT)/usr/lib/ppc64/$$f ] ; then \
-		lipo -create -output $(DSTROOT)/usr/lib/$${f}~ \
-		  $(DSTROOT)/usr/lib/$${f} $(DSTROOT)/usr/lib/ppc64/$${f} && \
-		mv $(DSTROOT)/usr/lib/$${f}~ $(DSTROOT)/usr/lib/$${f} || \
-		exit 1 ; \
-	    fi ; \
-	  done && \
-	  $(RM) -r $(DSTROOT)/usr/lib/ppc64 ; \
-	fi
+	for arch64 in ppc64 x86_64 ; do \
+	  if [ -d $(DSTROOT)/usr/lib/$$arch64 ] ; then \
+	    install_name_tool -id /usr/lib/libstdc++.6.dylib \
+	      $(DSTROOT)/usr/lib/$$arch64/libstdc++.6.*.dylib && \
+	    for f in `cd $(DSTROOT)/usr/lib/$$arch64 && echo *.{dylib,a}` ; do \
+	      if [ ! -L $(DSTROOT)/usr/lib/$$arch64/$$f ] ; then \
+		  lipo -create -output $(DSTROOT)/usr/lib/$${f}~ \
+		    $(DSTROOT)/usr/lib/$${f} $(DSTROOT)/usr/lib/$$arch64/$${f} && \
+		  mv $(DSTROOT)/usr/lib/$${f}~ $(DSTROOT)/usr/lib/$${f} || \
+		  exit 1 ; \
+	      fi ; \
+	    done && \
+	    $(RM) -r $(DSTROOT)/usr/lib/$$arch64 ; \
+	  fi ; \
+	done
 	$(RM) $(DSTROOT)/usr/lib/*.la
 	$(RM) $(DSTROOT)/usr/lib/libiberty.a
 	$(RM) $(DSTROOT)/usr/lib/libstdc++.dylib
@@ -117,6 +134,21 @@ post-install:
 	cp -Rp $(DSTROOT)/usr/lib/*.{a,dylib} $(SYMROOT)/
 	strip -x $(DSTROOT)/usr/lib/*.dylib
 	strip -X -S $(DSTROOT)/usr/lib/*.a
+	for (( i = 8 ; i <= $(CUR_OS_VERS) ; i++)) ; do \
+	  [ $$i == $(DARWIN_VERS) ] || \
+	  for t in powerpc powerpc64 i686 x86_64 ; do \
+	    [ \! -d $(DSTROOT)/usr/include/c++/$(AEP_Version)/$${t}-apple-darwin$(DARWIN_VERS) ] \
+	      || ln -s $${t}-apple-darwin$(DARWIN_VERS) \
+		$(DSTROOT)/usr/include/c++/$(AEP_Version)/$${t}-apple-darwin$${i} \
+	      || exit 1 ; \
+	  done \
+	done
+	[ ! -d $(DSTROOT)/usr/include/c++/$(AEP_Version)/powerpc-apple-darwin$(CUR_OS_VERS) ] || \
+	  ln -s ../powerpc64-apple-darwin$(CUR_OS_VERS) \
+	    $(DSTROOT)/usr/include/c++/$(AEP_Version)/powerpc-apple-darwin$(CUR_OS_VERS)/ppc64
+	[ ! -d $(DSTROOT)/usr/include/c++/$(AEP_Version)/i686-apple-darwin$(CUR_OS_VERS) ] || \
+	  ln -s ../x86_64-apple-darwin$(CUR_OS_VERS) \
+	    $(DSTROOT)/usr/include/c++/$(AEP_Version)/i686-apple-darwin$(CUR_OS_VERS)/x86_64
 	if [ "x$(SDKPFXs)" != x ] ; then \
 	  for i in $(SDKPFXs) ; do \
 	    $(MKDIR) $(DSTROOT)/$i && \
